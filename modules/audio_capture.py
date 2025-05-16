@@ -5,11 +5,6 @@ import time
 import wave
 import os
 
-from flask import jsonify, session
-
-from app import socketio, app
-
-
 class AudioCapture:
     def __init__(self, callback_function, device_index=None, chunk=1024, format=pyaudio.paInt16, channels=1,
                  rate=16000, segment_seconds=5, save_recordings=False, output_directory="recordings"):
@@ -42,33 +37,14 @@ class AudioCapture:
         if save_recordings and not os.path.exists(output_directory):
             os.makedirs(output_directory)
 
-    @app.route('/start_recording', methods=['POST'])
     def start_recording(self):
-        global recorder, is_recording
+        """Démarre l'enregistrement audio continu en temps réel"""
+        self.recording = True
+        self.thread = threading.Thread(target=self._process_audio_stream)
+        self.thread.daemon = True
+        self.thread.start()
+        print("Capture audio en temps réel démarrée...")
 
-        if not is_recording:
-            # Réinitialiser les transcriptions
-            global current_transcription, translations
-            current_transcription = ""
-            translations = {}
-
-            # Récupérer l'index du périphérique de la session
-            # Si None, le microphone par défaut du système sera utilisé
-            device_index = session.get('device_index')
-
-            # Initialiser et démarrer l'enregistrement
-            recorder = AudioCapture(
-                callback_function=process_audio,
-                device_index=device_index,
-                segment_seconds=3
-            )
-            recorder.start_recording()
-            is_recording = True
-
-            # Informer les clients
-            socketio.emit('recording_status', {'status': True})
-
-        return jsonify({"status": "recording_started"})
 
     def stop_recording(self):
         """Arrête l'enregistrement audio"""

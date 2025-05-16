@@ -1,8 +1,8 @@
-import datetime
-
 import boto3
 import json
 import time
+
+from datetime import datetime
 
 
 class AWSTranslator:

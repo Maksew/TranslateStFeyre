@@ -62,7 +62,7 @@ def process_audio(audio_data, sample_rate, filename=None):
 def emit_updates():
     socketio.emit('update_transcription', {'text': current_transcription})
     socketio.emit('update_translations', translations)
-
+    print(f"✅ Émis: transcription='{current_transcription[:30]}...'")
 
 # Routes
 @app.route('/')
@@ -126,7 +126,7 @@ def start_recording():
         recorder = AudioCapture(
             callback_function=process_audio,
             device_index=device_index,
-            segment_seconds=3
+            segment_seconds=1
         )
         recorder.start_recording()
         is_recording = True

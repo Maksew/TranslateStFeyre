@@ -28,8 +28,8 @@ class WhisperTranscriber:
         self.options = {
             "task": "transcribe",
             "language": self.language,
-            "beam_size": 5,
-            "best_of": 5,
+            "beam_size": 1,
+            "best_of": 1,
             "fp16": torch.cuda.is_available(),
             "without_timestamps": True,
         }
