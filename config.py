@@ -10,7 +10,7 @@ AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
 AWS_REGION = os.getenv('AWS_REGION', 'eu-west-3')
 
 # Configuration de l'application
-FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'default_secret_key_for_development')
+FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
 WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
 SOURCE_LANGUAGE = os.getenv('SOURCE_LANGUAGE', 'fr')
 
@@ -22,3 +22,6 @@ SUPPORTED_LANGUAGES = {
     'de': 'Deutsch',
     'it': 'Italiano'
 }
+
+# Configuration des dossiers
+RECORDINGS_DIR = "recordings"

@@ -1,10 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traduction en Temps Réel - Présentateur</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
 </head>
 <body>
+    <header>
+        <h1>Système de Traduction en Temps Réel</h1>
+        <div class="status-indicator">
+            <div id="recording-status" class="status-dot"></div>
+            <span id="status-text">Prêt</span>
+        </div>
+    </header>
 
+    <main>
+        <section class="controls">
+            <button id="start-recording" class="btn primary">Démarrer l'enregistrement</button>
+            <button id="stop-recording" class="btn secondary" disabled>Arrêter l'enregistrement</button>
+            <button id="reset" class="btn danger">Réinitialiser</button>
+            <!-- Ajout du bouton pour sélectionner le microphone -->
+            <a href="/devices" class="btn small">Changer de microphone</a>
+        </section>
+
+        <!-- Afficher le microphone sélectionné si disponible -->
+        {% if device_index is not none %}
+        <div class="device-info">
+            <p>
+                <strong>Microphone actif:</strong>
+                {% if current_device %}
+                    {{ current_device.name }}
+                    {% if current_device.is_default %} (microphone par défaut du système){% endif %}
+                {% else %}
+                    Microphone par défaut du système
+                {% endif %}
+                <a href="/devices" class="btn small">Changer</a>
+            </p>
+        </div>
+        {% endif %}
+
+        <section class="transcription-container">
+            <h2>Transcription Française</h2>
+            <div id="transcription" class="text-container"></div>
+        </section>
+
+        <section class="instructions">
+            <h2>Instructions</h2>
+            <ol>
+                <li>Sélectionnez votre microphone si nécessaire en cliquant sur "Changer de microphone"</li>
+                <li>Cliquez sur "Démarrer l'enregistrement" avant de commencer à parler</li>
+                <li>Parlez clairement et à un débit normal</li>
+                <li>La transcription et les traductions seront automatiquement mises à jour</li>
+                <li>Cliquez sur "Arrêter l'enregistrement" quand vous avez terminé</li>
+                <li>Les patients peuvent visualiser les traductions en se connectant à l'URL suivante avec leur téléphone ou tablette:</li>
+            </ol>
+            <div class="client-url">
+                <p id="client-url">http://<span id="server-ip">chargement...</span>:5000/client</p>
+                <button id="copy-url" class="btn small">Copier</button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Centre médical Sainte-Feyre (MGEN) - Prototype de traduction en temps réel</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/presenter.js') }}"></script>
 </body>
 </html>

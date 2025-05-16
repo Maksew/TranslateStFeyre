@@ -5,14 +5,19 @@ import time
 import wave
 import os
 
+from flask import jsonify, session
+
+from app import socketio, app
+
 
 class AudioCapture:
-    def __init__(self, callback_function, chunk=1024, format=pyaudio.paInt16, channels=1,
+    def __init__(self, callback_function, device_index=None, chunk=1024, format=pyaudio.paInt16, channels=1,
                  rate=16000, segment_seconds=5, save_recordings=False, output_directory="recordings"):
         """
         Initialise la capture audio en temps réel.
 
         :param callback_function: Fonction à appeler avec chaque segment audio
+        :param device_index: Index du périphérique d'entrée à utiliser (None = périphérique par défaut)
         :param chunk: Taille de bloc pour l'enregistrement
         :param format: Format audio (par défaut: 16-bit)
         :param channels: Nombre de canaux (1=mono)
@@ -22,6 +27,7 @@ class AudioCapture:
         :param output_directory: Dossier pour sauvegarder les fichiers si save_recordings=True
         """
         self.callback_function = callback_function
+        self.device_index = device_index
         self.chunk = chunk
         self.format = format
         self.channels = channels
@@ -36,13 +42,33 @@ class AudioCapture:
         if save_recordings and not os.path.exists(output_directory):
             os.makedirs(output_directory)
 
+    @app.route('/start_recording', methods=['POST'])
     def start_recording(self):
-        """Démarre l'enregistrement audio continu en temps réel"""
-        self.recording = True
-        self.thread = threading.Thread(target=self._process_audio_stream)
-        self.thread.daemon = True
-        self.thread.start()
-        print("Capture audio en temps réel démarrée...")
+        global recorder, is_recording
+
+        if not is_recording:
+            # Réinitialiser les transcriptions
+            global current_transcription, translations
+            current_transcription = ""
+            translations = {}
+
+            # Récupérer l'index du périphérique de la session
+            # Si None, le microphone par défaut du système sera utilisé
+            device_index = session.get('device_index')
+
+            # Initialiser et démarrer l'enregistrement
+            recorder = AudioCapture(
+                callback_function=process_audio,
+                device_index=device_index,
+                segment_seconds=3
+            )
+            recorder.start_recording()
+            is_recording = True
+
+            # Informer les clients
+            socketio.emit('recording_status', {'status': True})
+
+        return jsonify({"status": "recording_started"})
 
     def stop_recording(self):
         """Arrête l'enregistrement audio"""
@@ -58,6 +84,7 @@ class AudioCapture:
             channels=self.channels,
             rate=self.rate,
             input=True,
+            input_device_index=self.device_index,
             frames_per_buffer=self.chunk
         )
 
@@ -108,6 +135,38 @@ class AudioCapture:
     def __del__(self):
         """Libère les ressources PyAudio"""
         self.audio.terminate()
+
+    @staticmethod
+    def list_devices():
+        """Liste les périphériques d'entrée audio pertinents"""
+        p = pyaudio.PyAudio()
+        device_count = p.get_device_count()
+        devices = []
+        default_device_index = p.get_default_input_device_info()['index'] if p.get_default_input_device_info() else None
+
+        # Mots-clés pour filtrer les vrais microphones des périphériques virtuels
+        real_mic_keywords = ['mic', 'microphone', 'input', 'casque', 'headset']
+
+        for i in range(device_count):
+            device_info = p.get_device_info_by_index(i)
+            if device_info.get('maxInputChannels') > 0:  # C'est un périphérique d'entrée
+                device_name = device_info.get('name', '').lower()
+
+                # Détecter si c'est probablement un vrai micro (et pas un périphérique virtuel)
+                is_real_mic = any(keyword in device_name for keyword in real_mic_keywords)
+
+                # Ajouter seulement si c'est un vrai micro ou le périphérique par défaut
+                if is_real_mic or i == default_device_index:
+                    devices.append({
+                        'index': i,
+                        'name': device_info.get('name'),
+                        'channels': device_info.get('maxInputChannels'),
+                        'sample_rate': int(device_info.get('defaultSampleRate')),
+                        'is_default': (i == default_device_index)
+                    })
+
+        p.terminate()
+        return devices
 
 
 # Test simple

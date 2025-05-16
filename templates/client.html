@@ -1,10 +1,41 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traduction en Temps Réel - Client</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
 </head>
-<body>
+<body class="client-page">
+    <header>
+        <h1>Traduction en Temps Réel</h1>
+        <div class="language-selector">
+            <label for="language-select">Langue:</label>
+            <select id="language-select">
+                {% for code, name in languages.items() %}
+                <option value="{{ code }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </header>
 
+    <main>
+        <div class="status-indicator">
+            <div id="recording-status" class="status-dot"></div>
+            <span id="status-text">En attente...</span>
+        </div>
+
+        <section class="translation-container">
+            <h2 id="language-title">Français</h2>
+            <div id="translation" class="text-container"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Centre médical Sainte-Feyre (MGEN)</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/client.js') }}"></script>
 </body>
 </html>

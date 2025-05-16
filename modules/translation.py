@@ -1,3 +1,5 @@
+import datetime
+
 import boto3
 import json
 import time
@@ -74,14 +76,17 @@ class AWSTranslator:
             return f"ERREUR: {str(e)}"
 
     def translate_to_all(self, text, source_lang="fr"):
-        """
-        Traduit un texte vers toutes les langues supportées.
+        translations = {source_lang: text}
 
-        :param text: Texte à traduire
-        :param source_lang: Code de langue source (ISO 639-1)
-        :return: Dictionnaire avec les traductions {code_langue: texte_traduit}
-        """
-        translations = {source_lang: text}  # Inclure le texte original
+        # Compte le nombre de caractères à traduire
+        char_count = len(text) * len(self.supported_languages) - len(text)  # Soustraction du texte original
+        print(f"Caractères à traduire: {char_count}")
+
+        # À des fins de débogage et de suivi des coûts
+        today = datetime.now().strftime('%Y-%m-%d')
+        self.daily_char_count = getattr(self, 'daily_char_count', {})
+        self.daily_char_count[today] = self.daily_char_count.get(today, 0) + char_count
+        print(f"Total des caractères traduits aujourd'hui: {self.daily_char_count[today]}")
 
         for lang_code in self.supported_languages:
             if lang_code != source_lang:

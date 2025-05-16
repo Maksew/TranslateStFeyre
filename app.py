@@ -1,46 +1,42 @@
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO
 import time
-from dotenv import load_dotenv
 
-load_dotenv()
+# Importer la configuration
+from config import (
+    AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION,
+    FLASK_SECRET_KEY, WHISPER_MODEL, SOURCE_LANGUAGE,
+    SUPPORTED_LANGUAGES, RECORDINGS_DIR
+)
 
+# Importer nos modules
 from modules.audio_capture import AudioCapture
 from modules.transcription import WhisperTranscriber
 from modules.translation import AWSTranslator
 
-
 # Initialisation de l'application Flask
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY')
+app.config['SECRET_KEY'] = FLASK_SECRET_KEY
 socketio = SocketIO(app)
 
 # Initialiser les modules
 transcriber = WhisperTranscriber(
-    model_name=os.getenv('WHISPER_MODEL', 'base'),
-    language=os.getenv('SOURCE_LANGUAGE', 'fr')
+    model_name=WHISPER_MODEL,
+    language=SOURCE_LANGUAGE
 )
 
 translator = AWSTranslator(
-    region_name=os.getenv('AWS_REGION'),
-    aws_access_key=os.getenv('AWS_ACCESS_KEY'),
-    aws_secret_key=os.getenv('AWS_SECRET_KEY')
+    region_name=AWS_REGION,
+    aws_access_key=AWS_ACCESS_KEY,
+    aws_secret_key=AWS_SECRET_KEY
 )
 
+# Variables globales pour stocker les données
 current_transcription = ""
 translations = {}
 is_recording = False
 recorder = None
-
-# Langues supportées
-supported_languages = {
-    'fr': 'Français (original)',
-    'en': 'English',
-    'es': 'Español',
-    'de': 'Deutsch',
-    'it': 'Italiano'
-}
 
 
 # Fonction de callback pour le traitement audio
@@ -72,16 +68,44 @@ def emit_updates():
 @app.route('/')
 def index():
     """Page principale pour le présentateur"""
+    device_index = request.args.get('device')
+
+    # Si un appareil spécifique est demandé, le stocker dans la session
+    if device_index:
+        try:
+            device_index = int(device_index)
+            session['device_index'] = device_index
+        except ValueError:
+            session.pop('device_index', None)  # Réinitialiser si invalide
+
+    # Obtenir les informations sur le micro actuellement sélectionné
+    current_device = None
+    if 'device_index' in session and session['device_index'] is not None:
+        devices = AudioCapture.list_devices()
+        for device in devices:
+            if device['index'] == session['device_index']:
+                current_device = device
+                break
+
+    # Si aucun appareil n'est explicitement sélectionné, obtenir l'appareil par défaut
+    if current_device is None:
+        devices = AudioCapture.list_devices()
+        for device in devices:
+            if device.get('is_default'):
+                current_device = device
+                break
+
     return render_template('index.html',
-                           languages=supported_languages,
-                           is_recording=is_recording)
+                           languages=SUPPORTED_LANGUAGES,
+                           is_recording=is_recording,
+                           current_device=current_device)
 
 
 @app.route('/client')
 def client():
     """Page pour les clients (spectateurs)"""
     return render_template('client.html',
-                           languages=supported_languages)
+                           languages=SUPPORTED_LANGUAGES)
 
 
 # API Routes
@@ -95,8 +119,15 @@ def start_recording():
         current_transcription = ""
         translations = {}
 
+        # Récupérer l'index du périphérique de la session
+        device_index = session.get('device_index', None)
+
         # Initialiser et démarrer l'enregistrement
-        recorder = AudioCapture(callback_function=process_audio, segment_seconds=3)
+        recorder = AudioCapture(
+            callback_function=process_audio,
+            device_index=device_index,
+            segment_seconds=3
+        )
         recorder.start_recording()
         is_recording = True
 
@@ -105,6 +136,11 @@ def start_recording():
 
     return jsonify({"status": "recording_started"})
 
+@app.route('/devices')
+def list_devices():
+    """Liste les périphériques d'entrée audio disponibles"""
+    devices = AudioCapture.list_devices()
+    return render_template('devices.html', devices=devices)
 
 @app.route('/stop_recording', methods=['POST'])
 def stop_recording():
@@ -146,8 +182,8 @@ def handle_connect():
 
 if __name__ == '__main__':
     # Créer les dossiers nécessaires
-    if not os.path.exists('recordings'):
-        os.makedirs('recordings')
+    if not os.path.exists(RECORDINGS_DIR):
+        os.makedirs(RECORDINGS_DIR)
 
     # Assurez-vous que les répertoires pour les templates et static existent
     if not os.path.exists('templates'):

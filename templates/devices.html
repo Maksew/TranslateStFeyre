@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sélection de Microphone - Traduction en Temps Réel</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .default-device {
+            background-color: #e6ffed;
+            font-weight: bold;
+        }
+        .device-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .device-table th, .device-table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        .device-table th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Sélection du microphone</h1>
+    </header>
+
+    <main>
+        <section class="devices-container">
+            <div class="info-box">
+                <p>Recommandation: Utilisez le microphone par défaut du système pour de meilleures performances.</p>
+            </div>
+
+            <table class="device-table">
+                <thead>
+                    <tr>
+                        <th>Microphone</th>
+                        <th>Canaux</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                    <tr {% if device.is_default %}class="default-device"{% endif %}>
+                        <td>
+                            {{ device.name }}
+                            {% if device.is_default %}<span>(Microphone par défaut)</span>{% endif %}
+                        </td>
+                        <td>{{ device.channels }}</td>
+                        <td>
+                            {% if device.is_default %}
+                            <a href="/" class="btn primary small">Utiliser (recommandé)</a>
+                            {% else %}
+                            <a href="/?device={{ device.index }}" class="btn secondary small">Sélectionner</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="back-link">
+                <a href="/" class="btn">Retour à l'accueil</a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Centre médical Sainte-Feyre (MGEN) - Prototype de traduction en temps réel</p>
+    </footer>
+</body>
+</html>
