@@ -37,5 +37,43 @@
     </footer>
 
     <script src="{{ url_for('static', filename='js/client.js') }}"></script>
+
+    <!-- Script de débogage -->
+    <script>
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'D' && e.ctrlKey) {
+            // Activer le mode de débogage avec Ctrl+D
+            const debugDiv = document.createElement('div');
+            debugDiv.style.position = 'fixed';
+            debugDiv.style.top = '0';
+            debugDiv.style.right = '0';
+            debugDiv.style.backgroundColor = 'rgba(0,0,0,0.8)';
+            debugDiv.style.color = '#0f0';
+            debugDiv.style.padding = '10px';
+            debugDiv.style.fontFamily = 'monospace';
+            debugDiv.style.fontSize = '10px';
+            debugDiv.style.zIndex = '9999';
+            debugDiv.style.maxHeight = '50%';
+            debugDiv.style.overflow = 'auto';
+            debugDiv.id = 'debug-window';
+            document.body.appendChild(debugDiv);
+
+            // Remplacer console.log
+            const oldLog = console.log;
+            console.log = function() {
+                oldLog.apply(console, arguments);
+                const args = Array.from(arguments);
+                const debugDiv = document.getElementById('debug-window');
+                if (debugDiv) {
+                    const line = document.createElement('div');
+                    line.innerText = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+                    debugDiv.appendChild(line);
+                    debugDiv.scrollTop = debugDiv.scrollHeight;
+                }
+            };
+            console.log('Débogage activé!');
+        }
+    });
+    </script>
 </body>
 </html>

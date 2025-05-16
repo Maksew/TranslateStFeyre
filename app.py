@@ -1,7 +1,10 @@
 import os
+import time
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO
-import time
 
 # Importer la configuration
 from config import (
@@ -18,7 +21,7 @@ from modules.translation import AWSTranslator
 # Initialisation de l'application Flask
 app = Flask(__name__)
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*", ping_timeout=2)
 
 # Initialiser les modules
 transcriber = WhisperTranscriber(
@@ -63,6 +66,7 @@ def emit_updates():
     socketio.emit('update_transcription', {'text': current_transcription})
     socketio.emit('update_translations', translations)
     print(f"✅ Émis: transcription='{current_transcription[:30]}...'")
+
 
 # Routes
 @app.route('/')
@@ -136,11 +140,13 @@ def start_recording():
 
     return jsonify({"status": "recording_started"})
 
+
 @app.route('/devices')
 def list_devices():
     """Liste les périphériques d'entrée audio disponibles"""
     devices = AudioCapture.list_devices()
     return render_template('devices.html', devices=devices)
+
 
 @app.route('/stop_recording', methods=['POST'])
 def stop_recording():
@@ -178,6 +184,19 @@ def handle_connect():
     socketio.emit('update_transcription', {'text': current_transcription}, to=request.sid)
     socketio.emit('update_translations', translations, to=request.sid)
     socketio.emit('recording_status', {'status': is_recording}, to=request.sid)
+    print(f"✅ Client connecté: {request.sid}")
+
+
+def start_background_task():
+    """Fonction qui s'exécute en arrière-plan pour envoyer périodiquement des mises à jour"""
+    def send_updates():
+        while True:
+            # Forcer l'envoi des mises à jour toutes les 500ms
+            if is_recording:
+                socketio.emit('heartbeat', {'timestamp': time.time()})
+            eventlet.sleep(0.5)  # 500ms
+
+    return socketio.start_background_task(send_updates)
 
 
 if __name__ == '__main__':
@@ -190,6 +209,9 @@ if __name__ == '__main__':
         os.makedirs('templates')
     if not os.path.exists('static'):
         os.makedirs('static')
+
+    # Démarrer la tâche d'arrière-plan
+    start_background_task()
 
     # Démarrer le serveur
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -1,5 +1,9 @@
 document.addEventListener('DOMContentLoaded', function() {
-    const socket = io();
+    const socket = io({
+        transports: ['websocket'],
+        upgrade: false
+    });
+
     const startButton = document.getElementById('start-recording');
     const stopButton = document.getElementById('stop-recording');
     const resetButton = document.getElementById('reset');
@@ -12,17 +16,33 @@ document.addEventListener('DOMContentLoaded', function() {
     // Get the server IP address
     serverIpElement.textContent = window.location.hostname;
 
+    // Connection debugging
+    socket.on('connect', function() {
+        console.log('Connecté au serveur avec ID:', socket.id);
+    });
+
+    socket.on('disconnect', function() {
+        console.log('Déconnecté du serveur');
+    });
+
     // Socket.io event handlers
     socket.on('update_transcription', function(data) {
+        console.log("Reçu transcription:", data);
         transcriptionElement.textContent = data.text || 'Aucune transcription disponible';
     });
 
     socket.on('recording_status', function(data) {
+        console.log("Reçu status:", data);
         const isRecording = data.status;
         recordingStatusDot.classList.toggle('active', isRecording);
         statusText.textContent = isRecording ? 'Enregistrement en cours...' : 'Prêt';
         startButton.disabled = isRecording;
         stopButton.disabled = !isRecording;
+    });
+
+    socket.on('heartbeat', function(data) {
+        // Heartbeat pour garder la connexion active
+        console.log("Heartbeat reçu:", data.timestamp);
     });
 
     // Button event handlers
