@@ -1,0 +1,8 @@
+openai-whisper
+flask
+boto3
+flask-socketio
+pyaudio
+eventlet
+awscli
+python-dotenv

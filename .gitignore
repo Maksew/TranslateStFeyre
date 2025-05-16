@@ -1,0 +1,55 @@
+# Environnements et secrets
+.env
+.flaskenv
+.aws/
+.aws/credentials
+credentials
+
+# Environnements virtuels
+.venv/
+venv/
+ENV/
+env/
+
+# Fichiers Python compilés
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+
+# Distribution et packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Fichiers spécifiques au projet
+recordings/
+*.wav
+*.mp3
+
+# Logs et bases de données
+*.log
+*.db
+*.sqlite
+
+# Fichiers IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Autres
+*.bak
+*.tmp
+*.temp
