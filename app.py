@@ -22,6 +22,10 @@ from modules.audio_capture import AudioCapture
 from modules.transcription import WhisperTranscriber
 from modules.translation import AWSTranslator
 
+if torch.cuda.is_available():
+    # Optimisations pour les GPU NVIDIA série 16xx
+    torch.backends.cudnn.benchmark = True
+    torch.cuda.empty_cache()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
@@ -118,7 +122,7 @@ def start_recording():
         recorder = AudioCapture(
             callback_function=audio_callback,
             device_index=device_index,
-            segment_seconds=1.0
+            segment_seconds=0.8
         )
         recorder.start_recording()
         is_recording = True
@@ -159,6 +163,14 @@ def start_background_task():
     return socketio.start_background_task(heartbeat)
 
 if __name__ == '__main__':
+    if torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(0)
+        memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        print(f"🟢 CUDA disponible: {device_name} ({memory_gb:.2f} GB)")
+        if "1660" in device_name:  # Vérification de votre GPU spécifique
+            print("✅ Configuration optimisée pour GTX 1660 Ti")
+    else:
+        print("⚠️ ATTENTION: CUDA non disponible, utilisation du CPU uniquement (performances réduites)")
     os.makedirs(RECORDINGS_DIR, exist_ok=True)
     os.makedirs(CACHE_DIR, exist_ok=True)  # Pour le stockage cache
     threading.Thread(target=whisper_worker, daemon=True).start()

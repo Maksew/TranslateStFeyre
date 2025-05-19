@@ -1,5 +1,6 @@
 import whisper
 import numpy as np
+import hashlib
 from faster_whisper import WhisperModel
 import torch
 import time
@@ -45,7 +46,8 @@ class WhisperTranscriber:
         start = time.time()
 
         # Recherche dans le cache (pour les phrases répétées)
-        cache_key = hash(audio_data.tobytes())
+        audio_bytes = audio_data.tobytes()
+        cache_key = hashlib.md5(audio_bytes).hexdigest()
         if cache_key in self.segment_cache:
             transcript = self.segment_cache[cache_key]
             print(f"[Whisper] Cache hit! « {transcript} »")
@@ -83,6 +85,9 @@ class WhisperTranscriber:
             keys_to_remove = list(self.segment_cache.keys())[:int(self.cache_size * 0.2)]
             for key in keys_to_remove:
                 del self.segment_cache[key]
+
+        if audio_data.dtype == np.int16:
+            audio_data = audio_data.astype(np.float32) / 32768.0
 
         elapsed = time.time() - start
         rtf = elapsed / (len(audio_data) / sample_rate) if len(audio_data) > 0 else 0
