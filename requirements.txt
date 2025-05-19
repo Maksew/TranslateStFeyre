@@ -6,3 +6,6 @@ pyaudio
 eventlet
 awscli
 python-dotenv
+faster-whisper
+webrtcvad
+gc-python-utils

@@ -1,8 +1,8 @@
 import webrtcvad
 import numpy as np
 
-# Niveau d'agressivité 0–3 (3 = le plus strict sur les silences)
-vad = webrtcvad.Vad(2)
+# Niveau d'agressivité réduit à 1 (moins strict, plus réactif)
+vad = webrtcvad.Vad(1)
 
 def filter_speech(audio_np: np.ndarray, sample_rate: int) -> np.ndarray:
     """

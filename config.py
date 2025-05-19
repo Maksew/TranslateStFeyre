@@ -9,7 +9,7 @@ AWS_SECRET_KEY    = os.getenv('AWS_SECRET_KEY')
 AWS_REGION        = os.getenv('AWS_REGION', 'eu-west-3')
 
 FLASK_SECRET_KEY  = os.getenv('FLASK_SECRET_KEY')
-WHISPER_MODEL     = os.getenv('WHISPER_MODEL', 'large-v3')
+WHISPER_MODEL     = os.getenv('WHISPER_MODEL', 'small')
 SOURCE_LANGUAGE   = os.getenv('SOURCE_LANGUAGE', 'fr')
 
 SUPPORTED_LANGUAGES = {
@@ -19,3 +19,4 @@ SUPPORTED_LANGUAGES = {
 }
 
 RECORDINGS_DIR    = os.getenv('RECORDINGS_DIR', 'recordings')
+CACHE_DIR         = os.getenv('CACHE_DIR', 'cache')

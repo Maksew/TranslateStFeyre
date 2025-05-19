@@ -1,9 +1,12 @@
 # app.py
+import gc
 import os
 import time
 import queue
 import threading
 import eventlet
+import torch
+
 from modules.vad_utils import filter_speech
 eventlet.monkey_patch()
 
@@ -13,7 +16,7 @@ from flask_socketio import SocketIO
 from config import (
     AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION,
     FLASK_SECRET_KEY, WHISPER_MODEL, SOURCE_LANGUAGE,
-    SUPPORTED_LANGUAGES, RECORDINGS_DIR
+    SUPPORTED_LANGUAGES, RECORDINGS_DIR, CACHE_DIR
 )
 from modules.audio_capture import AudioCapture
 from modules.transcription import WhisperTranscriber
@@ -24,8 +27,8 @@ app.config['SECRET_KEY'] = FLASK_SECRET_KEY
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 # Files d’attente pour découplage
-audio_q = queue.Queue(maxsize=30)
-text_q  = queue.Queue(maxsize=30)
+audio_q = queue.Queue(maxsize=10)
+text_q  = queue.Queue(maxsize=10)
 
 # Modules
 transcriber = WhisperTranscriber(model_name=WHISPER_MODEL,
@@ -48,15 +51,21 @@ def audio_callback(audio_np, sample_rate, filename=None):
 def whisper_worker():
     global current_transcription
     while True:
-        raw_audio, sr = audio_q.get()
-        audio_np = filter_speech(raw_audio, sr)
-        if audio_np.size == 0:
+        try:
+            raw_audio, sr = audio_q.get(timeout=1)
+            audio_np = filter_speech(raw_audio, sr)
+            if audio_np.size == 0:
+                continue
+            text = transcriber.transcribe_audio(audio_np, sr)
+            if text.strip():
+                current_transcription = transcriber.get_full_transcript()
+                text_q.put(text)
+                emit_updates()
+        except queue.Empty:
             continue
-        text = transcriber.transcribe_audio(audio_np, sr)
-        if text.strip():
-            current_transcription = transcriber.get_full_transcript()
-            text_q.put(text)
-            emit_updates()
+        except Exception as e:
+            print(f"Erreur dans whisper_worker: {e}")
+            continue
 
 
 def translate_worker():
@@ -69,6 +78,13 @@ def translate_worker():
 def emit_updates():
     socketio.emit('update_transcription', {'text': current_transcription})
     socketio.emit('update_translations', translations)
+
+def memory_cleanup():
+    while True:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        time.sleep(60)  # Chaque minute
 
 @app.route('/')
 def index():
@@ -144,7 +160,9 @@ def start_background_task():
 
 if __name__ == '__main__':
     os.makedirs(RECORDINGS_DIR, exist_ok=True)
+    os.makedirs(CACHE_DIR, exist_ok=True)  # Pour le stockage cache
     threading.Thread(target=whisper_worker, daemon=True).start()
     threading.Thread(target=translate_worker, daemon=True).start()
+    threading.Thread(target=memory_cleanup, daemon=True).start()
     start_background_task()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

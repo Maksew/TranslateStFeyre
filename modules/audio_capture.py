@@ -7,7 +7,7 @@ import os
 
 class AudioCapture:
     def __init__(self, callback_function, device_index=None, chunk=1024, format=pyaudio.paInt16, channels=1,
-                 rate=16000, segment_seconds=5, save_recordings=False, output_directory="recordings"):
+                 rate=16000, segment_seconds=0.8, save_recordings=False, output_directory="recordings"):
         """
         Initialise la capture audio en temps réel.
 
