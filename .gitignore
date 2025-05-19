@@ -53,3 +53,11 @@ desktop.ini
 *.bak
 *.tmp
 *.temp
+
+# Dossier de cache des modèles Whisper
+models_cache/
+models_cache/**/*
+*.bin
+**/vocabulary.txt
+**/tokenizer.json
+**/config.json
