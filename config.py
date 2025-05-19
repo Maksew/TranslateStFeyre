@@ -4,24 +4,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuration AWS
-AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
-AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
-AWS_REGION = os.getenv('AWS_REGION', 'eu-west-3')
+AWS_ACCESS_KEY    = os.getenv('AWS_ACCESS_KEY')
+AWS_SECRET_KEY    = os.getenv('AWS_SECRET_KEY')
+AWS_REGION        = os.getenv('AWS_REGION', 'eu-west-3')
 
-# Configuration de l'application
-FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
-WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
-SOURCE_LANGUAGE = os.getenv('SOURCE_LANGUAGE', 'fr')
+FLASK_SECRET_KEY  = os.getenv('FLASK_SECRET_KEY')
+WHISPER_MODEL     = os.getenv('WHISPER_MODEL', 'large-v3')
+SOURCE_LANGUAGE   = os.getenv('SOURCE_LANGUAGE', 'fr')
 
-# Langues supportées
 SUPPORTED_LANGUAGES = {
-    'fr': 'Français (original)',
+    'fr': 'Français',
     'en': 'English',
-    'es': 'Español',
-    'de': 'Deutsch',
-    'it': 'Italiano'
+    'es': 'Español'
 }
 
-# Configuration des dossiers
-RECORDINGS_DIR = "recordings"
+RECORDINGS_DIR    = os.getenv('RECORDINGS_DIR', 'recordings')

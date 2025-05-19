@@ -1,217 +1,150 @@
+# app.py
 import os
 import time
+import queue
+import threading
 import eventlet
+from modules.vad_utils import filter_speech
 eventlet.monkey_patch()
 
 from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO
 
-# Importer la configuration
 from config import (
     AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION,
     FLASK_SECRET_KEY, WHISPER_MODEL, SOURCE_LANGUAGE,
     SUPPORTED_LANGUAGES, RECORDINGS_DIR
 )
-
-# Importer nos modules
 from modules.audio_capture import AudioCapture
 from modules.transcription import WhisperTranscriber
 from modules.translation import AWSTranslator
 
-# Initialisation de l'application Flask
 app = Flask(__name__)
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*", ping_timeout=2)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
-# Initialiser les modules
-transcriber = WhisperTranscriber(
-    model_name=WHISPER_MODEL,
-    language=SOURCE_LANGUAGE
-)
+# Files d’attente pour découplage
+audio_q = queue.Queue(maxsize=30)
+text_q  = queue.Queue(maxsize=30)
 
-translator = AWSTranslator(
-    region_name=AWS_REGION,
-    aws_access_key=AWS_ACCESS_KEY,
-    aws_secret_key=AWS_SECRET_KEY
-)
+# Modules
+transcriber = WhisperTranscriber(model_name=WHISPER_MODEL,
+                                 device=None,
+                                 language=SOURCE_LANGUAGE)
+translator  = AWSTranslator(AWS_ACCESS_KEY,
+                            AWS_SECRET_KEY,
+                            AWS_REGION,
+                            supported_languages=list(SUPPORTED_LANGUAGES.keys()))
 
-# Variables globales pour stocker les données
 current_transcription = ""
 translations = {}
 is_recording = False
 recorder = None
 
+def audio_callback(audio_np, sample_rate, filename=None):
+    """Empile le segment brut, ne fait rien d’autre."""
+    audio_q.put((audio_np, sample_rate))
 
-# Fonction de callback pour le traitement audio
-def process_audio(audio_data, sample_rate, filename=None):
-    global current_transcription, translations
+def whisper_worker():
+    global current_transcription
+    while True:
+        raw_audio, sr = audio_q.get()
+        audio_np = filter_speech(raw_audio, sr)
+        if audio_np.size == 0:
+            continue
+        text = transcriber.transcribe_audio(audio_np, sr)
+        if text.strip():
+            current_transcription = transcriber.get_full_transcript()
+            text_q.put(text)
+            emit_updates()
 
-    # Transcrire l'audio avec Whisper
-    text = transcriber.transcribe_audio(audio_data, sample_rate)
 
-    # Ne traduire que si nous avons du texte
-    if text and not text.isspace():
-        # Mettre à jour la transcription
-        current_transcription = transcriber.get_full_transcript()
-
-        # Traduire vers toutes les langues supportées
-        translations = translator.translate_to_all(text)
-
-        # Envoyer les mises à jour aux clients connectés
+def translate_worker():
+    global translations
+    while True:
+        text = text_q.get()
+        translations = translator.translate_to_all(text, source_lang=SOURCE_LANGUAGE)
         emit_updates()
 
-
-# Émission des mises à jour via websocket
 def emit_updates():
     socketio.emit('update_transcription', {'text': current_transcription})
     socketio.emit('update_translations', translations)
-    print(f"✅ Émis: transcription='{current_transcription[:30]}...'")
 
-
-# Routes
 @app.route('/')
 def index():
-    """Page principale pour le présentateur"""
     device_index = request.args.get('device')
-
-    # Si un appareil spécifique est demandé, le stocker dans la session
     if device_index:
         try:
-            device_index = int(device_index)
-            session['device_index'] = device_index
+            session['device_index'] = int(device_index)
         except ValueError:
-            session.pop('device_index', None)  # Réinitialiser si invalide
+            session.pop('device_index', None)
 
-    # Obtenir les informations sur le micro actuellement sélectionné
-    current_device = None
-    if 'device_index' in session and session['device_index'] is not None:
-        devices = AudioCapture.list_devices()
-        for device in devices:
-            if device['index'] == session['device_index']:
-                current_device = device
-                break
-
-    # Si aucun appareil n'est explicitement sélectionné, obtenir l'appareil par défaut
-    if current_device is None:
-        devices = AudioCapture.list_devices()
-        for device in devices:
-            if device.get('is_default'):
-                current_device = device
-                break
-
+    devices = AudioCapture.list_devices()
+    idx = session.get('device_index', None)
+    current_device = next((d for d in devices if d['index']==idx), None) \
+                     or next((d for d in devices if d.get('is_default')), None)
     return render_template('index.html',
                            languages=SUPPORTED_LANGUAGES,
                            is_recording=is_recording,
                            current_device=current_device)
 
-
 @app.route('/client')
 def client():
-    """Page pour les clients (spectateurs)"""
     return render_template('client.html',
                            languages=SUPPORTED_LANGUAGES)
 
-
-# API Routes
 @app.route('/start_recording', methods=['POST'])
 def start_recording():
-    global recorder, is_recording
-
+    global recorder, is_recording, current_transcription, translations
     if not is_recording:
-        # Réinitialiser les transcriptions
-        global current_transcription, translations
-        current_transcription = ""
-        translations = {}
-
-        # Récupérer l'index du périphérique de la session
+        current_transcription, translations = "", {}
         device_index = session.get('device_index', None)
-
-        # Initialiser et démarrer l'enregistrement
         recorder = AudioCapture(
-            callback_function=process_audio,
+            callback_function=audio_callback,
             device_index=device_index,
-            segment_seconds=1
+            segment_seconds=1.0
         )
         recorder.start_recording()
         is_recording = True
-
-        # Informer les clients
         socketio.emit('recording_status', {'status': True})
-
-    return jsonify({"status": "recording_started"})
-
-
-@app.route('/devices')
-def list_devices():
-    """Liste les périphériques d'entrée audio disponibles"""
-    devices = AudioCapture.list_devices()
-    return render_template('devices.html', devices=devices)
-
+    return jsonify(status="recording_started")
 
 @app.route('/stop_recording', methods=['POST'])
 def stop_recording():
     global recorder, is_recording
-
     if is_recording and recorder:
         recorder.stop_recording()
         is_recording = False
-
-        # Informer les clients
         socketio.emit('recording_status', {'status': False})
-
-    return jsonify({"status": "recording_stopped"})
-
+    return jsonify(status="recording_stopped")
 
 @app.route('/reset', methods=['POST'])
 def reset():
     global current_transcription, translations
-
-    # Réinitialiser les transcriptions
     current_transcription = ""
     transcriber.reset_transcript()
     translations = {}
-
-    # Informer les clients
     emit_updates()
+    return jsonify(status="reset_done")
 
-    return jsonify({"status": "reset_done"})
-
-
-# Websocket pour les connexions temps réel
 @socketio.on('connect')
 def handle_connect():
-    # Envoyer l'état actuel au client qui vient de se connecter
-    socketio.emit('update_transcription', {'text': current_transcription}, to=request.sid)
-    socketio.emit('update_translations', translations, to=request.sid)
-    socketio.emit('recording_status', {'status': is_recording}, to=request.sid)
-    print(f"✅ Client connecté: {request.sid}")
-
+    sid = request.sid
+    socketio.emit('update_transcription', {'text': current_transcription}, to=sid)
+    socketio.emit('update_translations', translations,    to=sid)
+    socketio.emit('recording_status', {'status': is_recording}, to=sid)
 
 def start_background_task():
-    """Fonction qui s'exécute en arrière-plan pour envoyer périodiquement des mises à jour"""
-    def send_updates():
+    def heartbeat():
         while True:
-            # Forcer l'envoi des mises à jour toutes les 500ms
             if is_recording:
-                socketio.emit('heartbeat', {'timestamp': time.time()})
-            eventlet.sleep(0.5)  # 500ms
-
-    return socketio.start_background_task(send_updates)
-
+                socketio.emit('heartbeat', {'ts': time.time()})
+            eventlet.sleep(0.5)
+    return socketio.start_background_task(heartbeat)
 
 if __name__ == '__main__':
-    # Créer les dossiers nécessaires
-    if not os.path.exists(RECORDINGS_DIR):
-        os.makedirs(RECORDINGS_DIR)
-
-    # Assurez-vous que les répertoires pour les templates et static existent
-    if not os.path.exists('templates'):
-        os.makedirs('templates')
-    if not os.path.exists('static'):
-        os.makedirs('static')
-
-    # Démarrer la tâche d'arrière-plan
+    os.makedirs(RECORDINGS_DIR, exist_ok=True)
+    threading.Thread(target=whisper_worker, daemon=True).start()
+    threading.Thread(target=translate_worker, daemon=True).start()
     start_background_task()
-
-    # Démarrer le serveur
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
