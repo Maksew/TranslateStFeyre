@@ -18,7 +18,7 @@ class AWSTranslator:
         self.supported_languages = supported_languages
         # Cache de traduction pour les phrases répétées
         self.translation_cache = {}
-        self.max_cache_size = 500
+        self.max_cache_size = 1000
 
     def translate_text(self, text: str, source_lang: str, target_lang: str) -> str:
         # Vérifier dans le cache
@@ -45,7 +45,7 @@ class AWSTranslator:
         return result
 
     def translate_to_all(self, text: str, source_lang: str = "fr") -> dict:
-        """Retourne {lang: traduction} avec optimisation par batch."""
+        """Retourne {lang: traduction} optimisé pour compte AWS standard."""
         # Si le texte est vide ou trop court, ne pas traduire
         if not text or len(text.strip()) < 3:
             return {source_lang: text}
@@ -53,34 +53,52 @@ class AWSTranslator:
         translations = {source_lang: text}
         target_langs = [lang for lang in self.supported_languages if lang != source_lang]
 
-        # Utiliser les batches pour AWS Translate (max 5 langues par requête)
+        # Utilisation optimisée pour compte AWS standard
         try:
-            # AWS permet de traduire vers plusieurs langues dans une seule requête
-            response = self.client.translate_text(
-                Text=text,
-                SourceLanguageCode=source_lang,
-                TargetLanguageCode=target_langs
-            )
+            # Vérifier d'abord le cache pour toutes les langues
+            cache_hits = 0
+            for tgt in target_langs:
+                cache_key = f"{text}_{source_lang}_{tgt}"
+                if cache_key in self.translation_cache:
+                    translations[tgt] = self.translation_cache[cache_key]
+                    cache_hits += 1
 
-            # Traiter les résultats du batch
-            if 'TranslatedTextList' in response:
-                for i, lang in enumerate(target_langs):
-                    if i < len(response['TranslatedTextList']):
-                        translations[lang] = response['TranslatedTextList'][i]
-                        # Mettre en cache
-                        cache_key = f"{text}_{source_lang}_{lang}"
-                        self.translation_cache[cache_key] = translations[lang]
+            # Si toutes les traductions sont en cache, on termine
+            if cache_hits == len(target_langs):
+                return translations
 
-        except Exception as e:
-            # En cas d'erreur avec le batch, revenir à la méthode séquentielle
-            print(f"Erreur avec batch translate: {e}, fallback sur méthode séquentielle")
-            with ThreadPoolExecutor(max_workers=3) as pool:
+            # Sinon, paralléliser les requêtes API pour les langues non-cachées
+            remaining_langs = [lang for lang in target_langs if
+                               f"{text}_{source_lang}_{lang}" not in self.translation_cache]
+
+            # Utiliser 2 workers maximum pour éviter les limitations d'API sur compte standard
+            with ThreadPoolExecutor(max_workers=2) as pool:
                 futures = {
                     pool.submit(self.translate_text, text, source_lang, tgt): tgt
-                    for tgt in target_langs
+                    for tgt in remaining_langs
                 }
                 for fut, tgt in futures.items():
-                    translations[tgt] = fut.result()
+                    try:
+                        translations[tgt] = fut.result()
+                    except Exception as e:
+                        print(f"Erreur de traduction pour {tgt}: {e}")
+                        # Fallback avec une pause en cas d'erreur de limitation
+                        time.sleep(0.5)
+                        try:
+                            translations[tgt] = self.translate_text(text, source_lang, tgt)
+                        except:
+                            translations[tgt] = f"[Erreur de traduction: {tgt}]"
+
+        except Exception as e:
+            print(f"Erreur globale de traduction: {e}")
+            # Mode dégradé: traduire une langue à la fois avec pause
+            for tgt in target_langs:
+                if tgt not in translations:
+                    try:
+                        translations[tgt] = self.translate_text(text, source_lang, tgt)
+                        time.sleep(0.2)  # Pause pour éviter les limitations
+                    except:
+                        translations[tgt] = f"[Erreur: {tgt}]"
 
         # Gestion de cache comme avant
         if len(self.translation_cache) >= self.max_cache_size:

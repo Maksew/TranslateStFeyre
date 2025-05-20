@@ -65,6 +65,7 @@ def whisper_worker():
                 current_transcription = transcriber.get_full_transcript()
                 text_q.put(text)
                 emit_updates()
+                time.sleep(0.1)
         except queue.Empty:
             continue
         except Exception as e:
