@@ -45,6 +45,14 @@ class WhisperTranscriber:
         """Retourne le texte transcrit pour un segment audio."""
         start = time.time()
 
+        print(f"[Audio] Taille: {audio_data.size}, Max: {np.max(np.abs(audio_data))}")
+
+        # IMPORTANT: Conversion de type doit être EN PREMIER
+        # Convertir de int16 à float32 et normaliser entre -1.0 et 1.0
+        if audio_data.dtype == np.int16:
+            print(f"[Conversion] Audio converti de {audio_data.dtype} à float32")
+            audio_data = audio_data.astype(np.float32) / 32768.0
+
         # Recherche dans le cache (pour les phrases répétées)
         audio_bytes = audio_data.tobytes()
         cache_key = hashlib.md5(audio_bytes).hexdigest()
@@ -62,13 +70,13 @@ class WhisperTranscriber:
             audio_data,
             language=self.language,
             initial_prompt=prompt,
-            vad_filter=True,
-            beam_size=1,  # Réduit pour économiser le GPU
-            best_of=1,  # Réduit pour économiser le GPU
-            temperature=0,  # Désactive l'échantillonnage aléatoire
-            compression_ratio_threshold=2.4,  # Plus tolérant
-            log_prob_threshold=-1.0,  # Plus tolérant
-            no_speech_threshold=0.6  # Moins sensible à l'absence de parole
+            vad_filter=False,  # Désactivez le VAD interne pour voir si c'est la cause
+            beam_size=5,  # Augmentez pour améliorer la recherche
+            best_of=1,
+            temperature=0,
+            compression_ratio_threshold=1.5,  # Plus tolérant (la valeur par défaut est 2.4)
+            log_prob_threshold=-2.0,  # Plus tolérant (la valeur par défaut est -1.0)
+            no_speech_threshold=0.3  # Plus sensible (la valeur par défaut est 0.6)
         )
 
         # Concatène tous les segments
@@ -85,9 +93,6 @@ class WhisperTranscriber:
             keys_to_remove = list(self.segment_cache.keys())[:int(self.cache_size * 0.2)]
             for key in keys_to_remove:
                 del self.segment_cache[key]
-
-        if audio_data.dtype == np.int16:
-            audio_data = audio_data.astype(np.float32) / 32768.0
 
         elapsed = time.time() - start
         rtf = elapsed / (len(audio_data) / sample_rate) if len(audio_data) > 0 else 0
