@@ -114,20 +114,44 @@ def client():
     return render_template('client.html',
                            languages=SUPPORTED_LANGUAGES)
 
+
 @app.route('/start_recording', methods=['POST'])
 def start_recording():
     global recorder, is_recording, current_transcription, translations
-    if not is_recording:
-        current_transcription, translations = "", {}
-        device_index = session.get('device_index', None)
-        recorder = AudioCapture(
-            callback_function=audio_callback,
-            device_index=device_index,
-            segment_seconds=2.0
-        )
-        recorder.start_recording()
-        is_recording = True
-        socketio.emit('recording_status', {'status': True})
+
+    # Empêcher les démarrages multiples
+    if is_recording:
+        return jsonify(status="already_recording")
+
+    # Mettre à jour l'état AVANT de démarrer l'enregistrement effectif
+    # pour que l'interface se mette à jour rapidement
+    is_recording = True
+    socketio.emit('recording_status', {'status': True})
+
+    # Réinitialiser les transcriptions
+    current_transcription, translations = "", {}
+    emit_updates()
+
+    # Maintenant démarrer l'enregistrement en arrière-plan
+    device_index = session.get('device_index', None)
+    try:
+        def start_recording_task():
+            global recorder
+            recorder = AudioCapture(
+                callback_function=audio_callback,
+                device_index=device_index,
+                segment_seconds=2.0
+            )
+            recorder.start_recording()
+
+        # Démarrer dans un thread séparé
+        threading.Thread(target=start_recording_task, daemon=True).start()
+    except Exception as e:
+        print(f"Erreur au démarrage de l'enregistrement: {e}")
+        is_recording = False
+        socketio.emit('recording_status', {'status': False})
+        return jsonify(status="recording_error", error=str(e))
+
     return jsonify(status="recording_started")
 
 @app.route('/stop_recording', methods=['POST'])

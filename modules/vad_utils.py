@@ -6,7 +6,7 @@ import torch
 class SileroVAD:
     def __init__(self):
         self.model = None
-        self.threshold = 0.5  # Ajustable: diminuer pour plus de sensibilité
+        self.threshold = 0.55 # Ajustable: diminuer pour plus de sensibilité
         self.sampling_rate = 16000
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._load_model()
@@ -69,7 +69,7 @@ def filter_speech(audio_np, sample_rate):
         return audio_np
 
     # Vérifier le niveau sonore
-    if np.max(np.abs(audio_np)) < 500:
+    if np.max(np.abs(audio_np)) < 750 :
         print("[VAD] Niveau audio trop faible, ignoré")
         return np.zeros(0, dtype=np.int16)
 
