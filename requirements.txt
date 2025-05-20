@@ -9,3 +9,5 @@ python-dotenv
 faster-whisper
 webrtcvad
 gc-python-utils
+torch>=1.11.0
+torchaudio>=0.11.0

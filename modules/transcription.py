@@ -28,7 +28,7 @@ class WhisperTranscriber:
         self.model = WhisperModel(
             model_name,
             device=self.device,
-            compute_type="float16" if self.device == "cuda" else "int8",
+            compute_type="int8_float16" if self.device == "cuda" else "int8",
             download_root="models_cache",  # Cache local
             cpu_threads=6,  # Optimisé pour Ryzen 5 4600H
             num_workers=2  # Nombre de workers pour le chargement
@@ -40,6 +40,11 @@ class WhisperTranscriber:
         # Initialiser un cache simple pour les segments courts répétés
         self.segment_cache = {}
         self.cache_size = 100  # Limite du cache
+
+        if self.device == "cuda":
+            # Limiter à 1.5GB pour laisser de l'espace pour d'autres opérations
+            torch.cuda.set_per_process_memory_fraction(0.75)
+            print(f"[CUDA] Limitation mémoire à 75% de la VRAM disponible")
 
     def transcribe_audio(self, audio_data, sample_rate: int) -> str:
         """Retourne le texte transcrit pour un segment audio."""
