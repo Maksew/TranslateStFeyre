@@ -31,7 +31,7 @@ class WhisperTranscriber:
             compute_type="int8_float16" if self.device == "cuda" else "int8",
             download_root="models_cache",  # Cache local
             cpu_threads=6,  # Optimisé pour Ryzen 5 4600H
-            num_workers=2  # Nombre de workers pour le chargement
+            num_workers=1  # Nombre de workers pour le chargement
         )
 
         self.language = language
@@ -41,19 +41,17 @@ class WhisperTranscriber:
         self.segment_cache = {}
         self.cache_size = 100  # Limite du cache
 
-        if self.device == "cuda":
-            # Limiter à 1.5GB pour laisser de l'espace pour d'autres opérations
-            torch.cuda.set_per_process_memory_fraction(0.75)
-            print(f"[CUDA] Limitation mémoire à 75% de la VRAM disponible")
+        if self.device == "cuda" and model_name in ["medium", "large"]:
+            torch.cuda.set_per_process_memory_fraction(0.6)
+            print(f"[CUDA] Limitation mémoire à 60% de la VRAM disponible pour modèle {model_name}")
 
     def transcribe_audio(self, audio_data, sample_rate: int) -> str:
-        """Retourne le texte transcrit pour un segment audio."""
+        """Retourne le texte transcrit pour un segment audio avec améliorations de continuité."""
         start = time.time()
 
         print(f"[Audio] Taille: {audio_data.size}, Max: {np.max(np.abs(audio_data))}")
 
-        # IMPORTANT: Conversion de type doit être EN PREMIER
-        # Convertir de int16 à float32 et normaliser entre -1.0 et 1.0
+        # Conversion de type doit être en premier
         if audio_data.dtype == np.int16:
             print(f"[Conversion] Audio converti de {audio_data.dtype} à float32")
             audio_data = audio_data.astype(np.float32) / 32768.0
@@ -64,35 +62,73 @@ class WhisperTranscriber:
         if cache_key in self.segment_cache:
             transcript = self.segment_cache[cache_key]
             print(f"[Whisper] Cache hit! « {transcript} »")
-            self.full_transcript += (" " + transcript).strip()
+
+            # Mettre à jour la transcription complète de manière intelligente
+            if self.full_transcript and transcript:
+                # Éviter la duplication de contenu
+                if not self.full_transcript.endswith(transcript):
+                    # Ajouter un espace pour éviter les mots collés
+                    self.full_transcript += " " + transcript.strip()
+            else:
+                self.full_transcript = transcript
+
             return transcript
 
-        # Contexte : on conserve les 200 derniers caractères (augmenté pour meilleure continuité)
-        prompt = self.full_transcript[-200:] if self.full_transcript else None
+        # Préparation du prompt contextuel pour améliorer la continuité
+        prompt = None
+        if self.full_transcript:
+            # Utiliser les derniers mots comme contexte
+            prompt = f"Transcription précédente: \"{self.full_transcript[-200:]}\". Suite:"
 
-        # Paramètres optimisés pour GTX 1660 Ti
+        # Paramètres optimisés pour la GTX 1660 Ti
         segments, _ = self.model.transcribe(
             audio_data,
             language=self.language,
             initial_prompt=prompt,
-            vad_filter=False,  # Désactivez le VAD interne pour voir si c'est la cause
-            beam_size=5,  # Augmentez pour améliorer la recherche
+            vad_filter=False,  # Le VAD est déjà appliqué en amont
+            beam_size=3,  # Réduit pour performance sans trop sacrifier la qualité
             best_of=1,
             temperature=0,
-            compression_ratio_threshold=1.5,  # Plus tolérant (la valeur par défaut est 2.4)
-            log_prob_threshold=-2.0,  # Plus tolérant (la valeur par défaut est -1.0)
-            no_speech_threshold=0.3  # Plus sensible (la valeur par défaut est 0.6)
+            compression_ratio_threshold=2.0,  # Plus tolérant pour les segments courts
+            log_prob_threshold=-1.5,  # Légèrement plus restrictif
+            no_speech_threshold=0.35  # Plus sensible
         )
 
         # Concatène tous les segments
         transcript = " ".join(seg.text for seg in segments).strip()
-        self.full_transcript += (" " + transcript).strip()
 
-        # Mettre en cache si le segment est court (évite les grosses entrées)
+        # Mise à jour intelligente du full_transcript
+        if transcript:
+            if self.full_transcript:
+                # Analyse pour éviter les redondances
+                transcript_words = transcript.split()
+                full_words = self.full_transcript.split()
+
+                # Vérifier si les premiers mots du nouveau segment sont les mêmes
+                # que les derniers mots de la transcription existante
+                overlap_detected = False
+                for i in range(min(3, len(transcript_words))):  # Vérifier jusqu'à 3 mots
+                    if len(full_words) >= i + 1 and transcript_words[:i + 1] == full_words[-i - 1:]:
+                        # Supprimer le chevauchement
+                        transcript = " ".join(transcript_words[i + 1:])
+                        overlap_detected = True
+                        break
+
+                # Ajouter avec espace si nécessaire
+                if transcript:
+                    if overlap_detected or self.full_transcript[-1] in ".!?":
+                        self.full_transcript += " " + transcript
+                    else:
+                        # S'assurer qu'il y a un espace
+                        self.full_transcript += " " + transcript
+            else:
+                self.full_transcript = transcript
+
+        # Mettre en cache si le segment est court
         if len(transcript) < 50 and len(self.segment_cache) < self.cache_size:
             self.segment_cache[cache_key] = transcript
 
-        # Si le cache devient trop grand, supprimer les entrées les plus anciennes
+        # Gérer le cache
         if len(self.segment_cache) >= self.cache_size:
             # Supprimer 20% des entrées les plus anciennes
             keys_to_remove = list(self.segment_cache.keys())[:int(self.cache_size * 0.2)]

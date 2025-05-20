@@ -123,7 +123,7 @@ def start_recording():
         recorder = AudioCapture(
             callback_function=audio_callback,
             device_index=device_index,
-            segment_seconds=0.8
+            segment_seconds=2.0
         )
         recorder.start_recording()
         is_recording = True
